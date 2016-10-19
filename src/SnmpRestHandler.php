@@ -1,0 +1,92 @@
+<?php
+require __DIR__ . '/vendor/autoload.php';
+spl_autoload_register(function ($className) {
+        include $className . '.php';
+});
+		
+class SnmpRestHandler extends SimpleRest {
+    const GET = "get";
+    const GETNEXT = "getnext";
+    const WALK = "walk";
+    const SET = "set";
+
+    private function checkVersion($version) {
+        switch($version) {
+            case "1":
+                return SNMP::VERSION_1;
+            case "2c":
+            case "2C":
+                return SNMP::VERSION_2C;
+            default:
+                throw new SNMPAPIException(SNMPAPIException::VERSION_MISMATCHED,"Version $version is not a valid SNMP version supported by this API");
+                break;
+        }
+    }
+
+	function command($command, $version, $hostname, $oid, $community,$timeout=/*1000000*/500,$retries=5,$type ="=", $description = "", $async = false, $callback_url = "") {	
+        try {
+            $snmpVersion = $this->checkVersion($version);
+            $snmp = new SNMP($snmpVersion, $hostname, $community, $timeout, $retries);
+           
+            $command = strtolower($command);
+            switch($command) {
+                case self::GET:
+                    $rawData = $snmp->get($oid);
+                    break;
+                case self::GETNEXT:
+                    $rawData = $snmp->getNext($oid);
+                    break;
+                case self::WALK:
+                    $rawData = $snmp->walk($oid);
+                    break;
+                case self::SET:
+                    $rawData = $snmp->set($oid, $type, $description);
+                    break;
+                default:
+                    throw new SNMPAPIException(SNMPAPIException::COMMAND_INVALID,"Command $command not recognised");
+                    break;
+            }
+
+            if (isset($_SERVER['HTTP_ACCEPT']) ) {
+    		    $requestContentType = $_SERVER['HTTP_ACCEPT'];
+	    	    $this ->setHttpHeaders($requestContentType, 200);
+echo "entropor aca";
+            }
+            
+            if ($snmp->getErrno() != SNMP::ERRNO_NOERROR)
+                throw new SNMPAPIException($snmp->getErrno(), $snmp->getError());
+
+	        $response = $this->encodeJson($rawData);
+		    return $response;
+
+        } catch (Exception $e) {
+            throw $e;
+        }
+	}
+	
+	public function encodeHtml($responseData) {
+	
+		$htmlResponse = "<table border='1'>";
+		foreach($responseData as $key=>$value) {
+    			$htmlResponse .= "<tr><td>". $key. "</td><td>". $value. "</td></tr>";
+		}
+		$htmlResponse .= "</table>";
+		return $htmlResponse;		
+	}
+	
+	public function encodeJson($responseData) {
+		$jsonResponse = json_encode($responseData);
+		return $jsonResponse;		
+	}
+	
+	public function encodeXml($responseData) {
+		// creating object of SimpleXMLElement
+		$xml = new SimpleXMLElement('<?xml version="1.0"?><mobile></mobile>');
+		foreach($responseData as $key=>$value) {
+			$xml->addChild($key, $value);
+		}
+		return $xml->asXML();
+	}
+	
+}
+?>
