@@ -1,0 +1,9 @@
+<filter>
+  <whitelist processUncoveredFilesFromWhitelist="true">
+    <directory suffix=".php">/home/nico/snmp_intraway/src/</directory>
+    <file>/home/nico/snmp_intraway/src/*</file>
+    <exclude>
+     
+    </exclude>
+  </whitelist>
+</filter>

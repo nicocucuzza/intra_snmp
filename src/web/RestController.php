@@ -43,6 +43,7 @@ try {
             $parameter[] = $_REQUEST[$param];
     } 
 
+    //TODO finish the async mode
     if( isset($_REQUEST['async']) ) {
         $requestContentType = $_SERVER['HTTP_ACCEPT'];     
         $restResponse = new SimpleRest();
@@ -56,7 +57,7 @@ try {
 
     $snmpRestHandler = new SnmpRestHandler();
 
-
+    //Execute the right command using the parameters given
     switch(count($parameter)) {
         case 5:
             $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4]);
@@ -85,6 +86,7 @@ try {
     echo $response;
 
 } catch (SNMPAPIException $e) {
+    //Build the response in case of error
     $response = new ResponseErrorMessage($e->getCode(),$e->getMessage());
     echo json_encode( $response->toJson() );
     exit($e->getCode());
