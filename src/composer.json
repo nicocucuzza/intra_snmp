@@ -1,5 +1,6 @@
 {
     "require": {
-        "monolog/monolog": "^1.21"
+        "monolog/monolog": "^1.21",
+	"phpunit/phpunit": "3.7.*"
     }
 }

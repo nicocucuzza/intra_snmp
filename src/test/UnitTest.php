@@ -1,13 +1,15 @@
 <?php
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/../vendor/autoload.php';
+require 'PHPUnit/Autoload.php';
 
 spl_autoload_register(function ($className) {
         include $className . '.php';
 });
 
+
 use PHPUnit\Framework\TestCase;
 
-class SnmpTest extends TestCase {
+class SnmpTest extends PHPUnit_Framework_TestCase {
 
     public $curl = null;
     public $service_url = 'http://127.0.0.1/snmp/';
@@ -262,7 +264,6 @@ class SnmpTest extends TestCase {
         $this->curl_post_data = null    ;
 
         $resp = json_decode($curl_response);
-
         $this->assertContains("Timeticks",$resp);
     }
  
@@ -284,6 +285,28 @@ class SnmpTest extends TestCase {
 
         $resp = json_decode($curl_response);
 
+        $this->assertContains("Timeticks",$resp);
+    }
+
+    // Test #17: send a request to command get in v1
+    public function testCurlAsyncMode() {
+        // Arrange
+        $this->curl_post_data = array();
+        $this->curl_post_data = array(    "command"=> "Get",
+            "version"=> "1",
+            "hostname"=> "localhost",
+            "oid"=> "system.sysUpTime.0",
+            "community"=> "default",
+            "async"=> "true",
+            "callback_url"=>"test"
+        );
+
+        $this->initCurl();
+        $curl_response = curl_exec($this->curl);
+        curl_close($this->curl);        
+        $this->curl_post_data = null    ;
+
+        $resp = json_decode($curl_response);
         $this->assertContains("Timeticks",$resp);
     }
 }

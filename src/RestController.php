@@ -1,5 +1,7 @@
 <?php
-//require_once("SnmpRestHandler.php");
+
+// Autoload
+// TODO use PSR3
 require __DIR__ . '/vendor/autoload.php';
 spl_autoload_register(function ($className) {
         include $className . '.php';
@@ -8,88 +10,146 @@ use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\FirePHPHandler;
 
-// Create the logger
-$logger = new Logger('snmp_rest_api_logger');
-// // Now add some handlers
-$logger->pushHandler(new StreamHandler('/home/nico/snmp_intraway/src/snmp_api.log', Logger::DEBUG));
-$logger->pushHandler(new FirePHPHandler());
+class RestController {
 
-// List of mandatory parameters in all requests
-$mandatoryParameters = array (
-    "command",
-    "version",
-    "hostname",
-    "oid",
-    "community"
-);
+    // Logger 
+    private $logger = null;
 
-$optionalParameters = array (
-    "timeout",
-    "retries",
-    "type",
-    "description",
-    "async",
-    "callback_url"
-);
+    //Config values
+    private $config = array();
 
-try {
-    // Verifies if each mandatory parameter is present in the request received
-    foreach($mandatoryParameters as $param) {
-        if(!isset($_REQUEST[$param])) {
-            $message = "Parameter $param is not present in the request";
-            $logger->addError($message);
-            throw new SNMPAPIException(SNMPAPIException::MANDATORY_PARAMETER_FAILED, "Parameter $param is not present in the request");
-        } else
-            $parameter[] = $_REQUEST[$param];
-    } 
+    //Parameters received in request, without parsing
+    private $rawParameters = array();
 
-    //TODO finish the async mode
-    if( isset($_REQUEST['async']) ) {
-        $requestContentType = $_SERVER['HTTP_ACCEPT'];     
-        $restResponse = new SimpleRest();
-        $restResponse->setHttpHeaders($requestContentType, 202);
+    //Parameters received in request, parsed
+    private $parameters = array();
+
+    //Path to ini file (by default)
+    const INI_FILE = __DIR__."/config/snmp-api.ini";
+
+    public function RestController($iniFile = self::INI_FILE, $rawParameters) {
+        //Verify if configuration file exists
+        if(!file_exists($iniFile) ) {
+            throw new SNMPAPIException(SNMPAPIException::INI_FILE_NOT_FOUND, "Error: configuration file not found. ".$iniFile." doesn't exist.");
+        }
+
+        $this->rawParameters = $rawParameters;
+
+        //Load configuration file values
+        $this->config = parse_ini_file($iniFile,true);
+        $logFile = $this->config['logger']['log-dir'];
+
+        // Create the logger
+        $this->logger = new Logger('snmp_rest_api_logger');
+
+        // Check if log file exists (or if it can be created)
+        $this->verifyLogFile($logFile); 
+
+        //TODO encapsulate this methods
+        $this->logger->pushHandler(new StreamHandler($logFile, Logger::DEBUG));
+        $this->logger->pushHandler(new FirePHPHandler());
+
     }
 
-    foreach($optionalParameters as $param) {
-        if(isset($_REQUEST[$param]) )
-            $parameter[] = $_REQUEST[$param];
+    //Verify if log file has permission
+    public function verifyLogFile($logFile) {
+        
+        // Check file existence and permissions
+        if(!file_exists($logFile) ) {
+            if(!touch($logFile)) {                
+                throw new SNMPAPIException(SNMPAPIException::LOG_FILE_ERROR, "Error: Log can't start. Details: ". $logFile." can't be created. Please verify if the file exists, or if you have permission to create it");                
+            }
+        }
+        //Check if log file is writable
+        if(!is_writable($logFile)) {
+            throw new SNMPAPIException(SNMPAPIException::LOG_FILE_ERROR, "Error: Log can't start. Details: ". $logFile." is not writable. Please verify if the file exists, or if you have permission to create it");
+        }
+
+        return true;
     }
 
-    $snmpRestHandler = new SnmpRestHandler();
+    //Read parameters (mandatory and optionals)
+    public function readParameters() {
 
-    //Execute the right command using the parameters given
-    switch(count($parameter)) {
-        case 5:
-            $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4]);
-            break;
-        case 6:
-            $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4],$parameter[5]);
-            break;
-        case 7:
-            $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4],$parameter[5],$parameter[6]);
-            break;
-        case 8:
-            $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4],$parameter[5],$parameter[6],$parameter[7]);
-            break;
-        case 9:
-            $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4],$parameter[5],$parameter[6],$parameter[7],$parameter[8]);
-            break;
-        case 10:
-            throw new SNMPAPIException(SNMPAPIException::NO_CALLBACK, "Async mode requires an URL callback");
-            break;
-        case 11:
-            $response = $snmpRestHandler->command($parameter[0],$parameter[1],$parameter[2],$parameter[3],$parameter[4],$parameter[5],$parameter[6],$parameter[7],$parameter[8],$parameter[9],$parameter[10]);
-            break;
+        //Read mandatory parameters 
+        $iniMandatory = $this->config['api-parameters']['mandatory-parameters'];
+        $this->mandatoryParameters = explode(",",$iniMandatory);
+        
+        //Read optional parameters
+        $iniOptional = $this->config['api-parameters']['optional-parameters'];
+        $this->optionalParameters = explode(",",$iniOptional);
+
+        // Verifies if each mandatory parameter is present in the request received
+        foreach($this->mandatoryParameters as $param) {
+            if(!isset($this->rawParameters[$param])) {
+                $message = "Parameter $param is not present in the request";
+                $this->logger->addError($message);
+                throw new SNMPAPIException(SNMPAPIException::MANDATORY_PARAMETER_FAILED, "Parameter $param is not present in the request");
+            } else {
+                $this->logger->addDebug("Adding parameter $param with value ".$this->rawParameters[$param]);
+                $parameter[] = new RestParameter($param, $this->rawParameters[$param]);
+            }
+        } 
+    
+        //Verify optional parameters. If it's missing, use the default value
+        foreach($this->optionalParameters as $param) {
+            if(isset($_REQUEST[$param]) ) {
+                $this->logger->addDebug("Adding parameter $param with value ".$_REQUEST[$param]);
+                $parameter[] = new RestParameter($param,$_REQUEST[$param]);
+            } else {
+                $value = $this->config['parameters-default-values'][$param."-default"];
+                $this->logger->addDebug("Adding parameter $param with DEFAULT value ".$value);
+                $parameter[] = new RestParameter($param,$value);
+            }
+        }
+
+        //Set all the parameters and its values in an internal array
+        $this->parameters = $parameter;
     }
 
-    $logger->addDebug($response);
-    echo $response;
+    //Verify if async mode is active or not
+    public function isAsync() {
+        return (isset($this->parameters['async']) );
+    }
 
-} catch (SNMPAPIException $e) {
-    //Build the response in case of error
-    $response = new ResponseErrorMessage($e->getCode(),$e->getMessage());
-    echo json_encode( $response->toJson() );
-    exit($e->getCode());
+    //Execute the command and return the result
+    public function executeRestCommand () {
+
+        //Read parameters (mandatories and optionals)
+        $this->readParameters();
+
+        //If it's an async call, response HTTP ACCEPT, and then execute the command. The result will be in the callback_url given
+        if($this->isAsync() ) {
+            $requestContentType = $_SERVER['HTTP_ACCEPT'];
+            $restResponse = new SimpleRest();
+            $restResponse->setHttpHeaders($requestContentType, 202);
+            $this->logger->addDebug($restResponse);
+            echo $restResponse;
+        }
+
+        $snmpRestHandler = new SnmpRestHandler();
+
+        //Execute the command using all the parameters given (mandatories and optionals)
+        $response = $snmpRestHandler->command(
+            $this->parameters[0]->getValue(),
+            $this->parameters[1]->getValue(),
+            $this->parameters[2]->getValue(),
+            $this->parameters[3]->getValue(),
+            $this->parameters[4]->getValue(),
+            $this->parameters[5]->getValue(),
+            $this->parameters[6]->getValue(),
+            $this->parameters[7]->getValue(),
+            $this->parameters[8]->getValue(),
+            $this->parameters[9]->getValue(),
+            $this->parameters[10]->getValue()
+        );
+
+      $this->logger->addDebug($response);
+
+      //Show response via standard output
+      echo $response;
+    }
+
 }
 
 ?>

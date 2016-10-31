@@ -1,9 +1,9 @@
 <?php
 require __DIR__ . '/vendor/autoload.php';
+
 spl_autoload_register(function ($className) {
         include $className . '.php';
 });
-
 
 class SnmpRestHandler extends SimpleRest {
     const GET = "get";
@@ -25,8 +25,7 @@ class SnmpRestHandler extends SimpleRest {
     }
 
     // Receive a request, execute (using PHP's SNMP library) a valid command and return the response
-    // TODO async mode
-	function command($command, $version, $hostname, $oid, $community,$timeout=1000000500,$retries=5,$type ="=", $description = "", $async = false, $callback_url = "") {	
+	function command($command, $version, $hostname, $oid, $community,$timeout=/*1000000*/500,$retries=5,$type ="=", $description = "", $async = false, $callback_url = "") {	
         try {
             // Validates SNMP version (supported: 1 and 2C)
             $snmpVersion = $this->checkVersion($version);
@@ -47,7 +46,7 @@ class SnmpRestHandler extends SimpleRest {
                     break;
                 case self::SET:
                     //TODO implement SET command
-//                  $rawData = $snmp->set($oid, $type, $description);
+                    $rawData = $snmp->set($oid, $type, $description);
                     break;
                 default:
                     // Throws an exception if the command is not one of the valid ones
